@@ -3,29 +3,33 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>台指期振幅監控</title>
+<title>振幅監控</title>
 <style>
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #6a737d;
     --line: #e3e6ea; --day: #2563eb; --night: #d97706; --full: #059669;
+    --main: #7c3aed; --avg: #6a737d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12151a; --card: #1b2027; --text: #e8ebef; --muted: #8b95a1;
       --line: #2b323b; --day: #6ea0ff; --night: #f2a63b; --full: #3ccf9a;
+      --main: #a78bfa; --avg: #8b95a1;
     }
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--text);
          font: 15px/1.5 -apple-system, "Segoe UI", "Noto Sans TC", sans-serif; }
   .wrap { max-width: 1040px; margin: 0 auto; padding: 24px 16px 48px; }
-  header { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 16px; }
+  header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 16px; }
   h1 { font-size: 22px; margin: 0; }
   .sub { color: var(--muted); font-size: 13px; }
-  .controls { margin-left: auto; display: flex; gap: 6px; }
-  .controls button { border: 1px solid var(--line); background: var(--card); color: var(--text);
+  .tabs, .controls { display: flex; gap: 6px; }
+  .controls { margin-left: auto; }
+  .tabs button, .controls button { border: 1px solid var(--line); background: var(--card); color: var(--text);
     padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
-  .controls button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .tabs button { font-size: 14px; padding: 6px 16px; }
+  .tabs button.on, .controls button.on { background: var(--text); color: var(--bg); border-color: var(--text); }
   .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; margin-bottom: 16px; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
   .card .name { font-size: 13px; color: var(--muted); display: flex; align-items: center; gap: 6px; }
@@ -47,11 +51,12 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>台指期振幅監控</h1>
+    <h1>振幅監控</h1>
+    <div class="tabs" id="tabs"></div>
     <span class="sub" id="updated">載入中…</span>
     <div class="controls" id="ctl"></div>
   </header>
-  <p id="err">資料載入失敗，請確認 data.json 是否存在。</p>
+  <p id="err"></p>
 
   <div class="cards" id="cards"></div>
 
@@ -68,34 +73,60 @@
     <table id="tbl"></table>
   </div>
 
-  <p class="note">
-    台指期(TX)近月合約。日盤 08:45–13:45；夜盤為前一晚 15:00 至當日 05:00；全日盤為同一交易日的夜盤加日盤。<br>
-    振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 該時段開盤價（全日盤以夜盤開盤價計）。<br>
-    平均值取各時段最近 N 筆有資料的交易日。資料來源：臺灣期貨交易所，每個交易日 15:30 後自動更新。
-  </p>
+  <p class="note" id="note"></p>
 </div>
 
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 (function () {
-  var SESSIONS = [
-    { key: "day",   label: "日盤",   color: "--day" },
-    { key: "night", label: "夜盤",   color: "--night" },
-    { key: "full",  label: "全日盤", color: "--full" }
-  ];
+  var MARKETS = {
+    tx: {
+      label: "台指期 TX", file: "data.json", mult: null, ohlc: false,
+      sessions: [
+        { key: "day",   label: "日盤",   color: "--day" },
+        { key: "night", label: "夜盤",   color: "--night" },
+        { key: "full",  label: "全日盤", color: "--full" }
+      ],
+      note: "台指期(TX)近月合約。日盤 08:45–13:45；夜盤為前一晚 15:00 至當日 05:00；全日盤為同一交易日的夜盤加日盤。<br>" +
+            "振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 該時段開盤價（全日盤以夜盤開盤價計）。<br>" +
+            "平均值取各時段最近 N 筆有資料的交易日。資料來源：臺灣期貨交易所，每個交易日 15:30 後自動更新。"
+    },
+    mnq: {
+      label: "MNQ", file: "mnq.json", mult: 2, ohlc: true,
+      sessions: [ { key: "full", label: "全日盤", color: "--main" } ],
+      note: "微型那斯達克100期貨（MNQ）近月連續合約，全日盤＝CME 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
+            "振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 開盤價；每口金額 = 振幅 × US$2（MNQ 每點 2 美元，未含手續費）。<br>" +
+            "資料來源：Yahoo Finance，每個交易日收盤後（台灣時間早上）自動更新；與 TradingView 或券商的 K 棒可能有些微差異。"
+    }
+  };
   var OPTIONS = [5, 10, 20, 60];
-  var state = { n: 20, rows: [], chart: null };
+  var state = { market: "tx", n: 20, data: { tx: null, mnq: null }, chart: null };
 
+  function $(id) { return document.getElementById(id); }
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
   function fmt(x, d) { return x == null ? "—" : x.toFixed(d); }
+  function money(x) { return x == null ? "—" : "$" + Math.round(x).toLocaleString("en-US"); }
   function mean(a) { return a.length ? a.reduce(function (s, v) { return s + v; }, 0) / a.length : null; }
+  function cur() { return MARKETS[state.market]; }
+  function rowsOf() { var d = state.data[state.market]; return d ? d.rows : []; }
+  function lastValid(key) { return rowsOf().filter(function (r) { return r[key]; }).slice(-state.n); }
 
-  function lastValid(key) {
-    return state.rows.filter(function (r) { return r[key]; }).slice(-state.n);
+  function marketFromHash() { return location.hash === "#mnq" ? "mnq" : "tx"; }
+
+  function renderTabs() {
+    var box = $("tabs");
+    box.innerHTML = "";
+    Object.keys(MARKETS).forEach(function (k) {
+      var b = document.createElement("button");
+      b.textContent = MARKETS[k].label;
+      if (k === state.market) b.className = "on";
+      b.onclick = function () { location.hash = k; };
+      box.appendChild(b);
+    });
   }
 
   function renderControls() {
-    var box = document.getElementById("ctl");
+    var box = $("ctl");
     box.innerHTML = "";
     OPTIONS.forEach(function (n) {
       var b = document.createElement("button");
@@ -107,27 +138,39 @@
   }
 
   function renderCards() {
-    var html = "";
-    SESSIONS.forEach(function (s) {
+    var M = cur(), html = "";
+    M.sessions.forEach(function (s) {
       var rows = lastValid(s.key);
       var pts = mean(rows.map(function (r) { return r[s.key].amp; }));
       var pct = mean(rows.map(function (r) { return r[s.key].pct; }));
       html += '<div class="card"><div class="name"><span class="dot" style="background:var(' + s.color + ')"></span>' +
         s.label + ' · 近 ' + rows.length + ' 日平均</div>' +
         '<div class="pts">' + fmt(pts, 0) + '<small>點</small></div>' +
-        '<div class="pct">' + fmt(pct, 2) + '%</div></div>';
+        '<div class="pct">' + fmt(pct, 2) + '%' +
+        (M.mult ? ' · 每口約 ' + money(pts == null ? null : pts * M.mult) : '') + '</div></div>';
     });
-    document.getElementById("cards").innerHTML = html;
+    if (M.mult && M.sessions.length === 1) {
+      var key = M.sessions[0].key, all = rowsOf(), latest = all[all.length - 1];
+      var avg = mean(lastValid(key).map(function (r) { return r[key].amp; }));
+      if (latest && latest[key]) {
+        var ratio = avg ? latest[key].amp / avg : null;
+        html += '<div class="card"><div class="name">最新一日 ' + latest.date + '</div>' +
+          '<div class="pts">' + fmt(latest[key].amp, 0) + '<small>點</small></div>' +
+          '<div class="pct">' + fmt(latest[key].pct, 2) + '% · 為平均的 ' + fmt(ratio, 2) + ' 倍</div></div>';
+      }
+    }
+    $("cards").innerHTML = html;
   }
 
   function renderExtremes() {
-    document.getElementById("extTitle").textContent = "近 " + state.n + " 日振幅極值（依點數排序）";
+    var M = cur();
+    $("extTitle").textContent = "近 " + state.n + " 日振幅極值（依點數排序）";
     var head = "<tr><th></th>";
-    SESSIONS.forEach(function (s) { head += "<th>" + s.label + "</th>"; });
+    M.sessions.forEach(function (s) { head += "<th>" + s.label + "</th>"; });
     head += "</tr>";
 
     var sorted = {};
-    SESSIONS.forEach(function (s) {
+    M.sessions.forEach(function (s) {
       sorted[s.key] = lastValid(s.key).map(function (r) {
         return { date: r.date, amp: r[s.key].amp, pct: r[s.key].pct };
       }).sort(function (a, b) { return b.amp - a.amp; });
@@ -141,22 +184,23 @@
     ];
     var body = picks.map(function (p) {
       var tr = "<tr><td>" + p.label + "</td>";
-      SESSIONS.forEach(function (s) {
+      M.sessions.forEach(function (s) {
         var a = sorted[s.key];
         var v = a.length >= 4 ? a[p.at(a.length)] : null;
         tr += "<td>" + (v
-          ? fmt(v.amp, 0) + " 點 · " + fmt(v.pct, 2) + '%<br><span class="sub">' + v.date + "</span>"
+          ? fmt(v.amp, 0) + " 點 · " + fmt(v.pct, 2) + "%" + (M.mult ? " · " + money(v.amp * M.mult) : "") +
+            '<br><span class="sub">' + v.date + "</span>"
           : "—") + "</td>";
       });
       return tr + "</tr>";
     }).join("");
-    document.getElementById("ext").innerHTML = head + body;
+    $("ext").innerHTML = head + body;
   }
 
   function renderChart() {
-    var rows = state.rows.slice(-state.n);
+    var M = cur(), rows = rowsOf().slice(-state.n);
     var labels = rows.map(function (r) { return r.date.slice(5).replace("-", "/"); });
-    var datasets = SESSIONS.map(function (s) {
+    var datasets = M.sessions.map(function (s) {
       return {
         label: s.label,
         data: rows.map(function (r) { return r[s.key] ? r[s.key].amp : null; }),
@@ -164,9 +208,16 @@
         borderWidth: 2, pointRadius: rows.length > 30 ? 0 : 3, tension: 0.15, spanGaps: false
       };
     });
+    if (M.sessions.length === 1) {
+      var avg = mean(lastValid(M.sessions[0].key).map(function (r) { return r[M.sessions[0].key].amp; }));
+      datasets.push({
+        label: "平均", data: rows.map(function () { return avg; }),
+        borderColor: css("--avg"), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0
+      });
+    }
     var txt = css("--muted"), grid = css("--line");
     if (state.chart) state.chart.destroy();
-    state.chart = new Chart(document.getElementById("chart"), {
+    state.chart = new Chart($("chart"), {
       type: "line",
       data: { labels: labels, datasets: datasets },
       options: {
@@ -183,33 +234,66 @@
   }
 
   function renderTable() {
+    var M = cur();
     var head = "<tr><th>交易日</th>";
-    SESSIONS.forEach(function (s) { head += "<th>" + s.label + " 點數</th><th>%</th>"; });
+    if (M.ohlc) head += "<th>開盤</th><th>最高</th><th>最低</th><th>收盤</th>";
+    M.sessions.forEach(function (s) {
+      head += "<th>" + s.label + " 點數</th><th>%</th>" + (M.mult ? "<th>每口</th>" : "");
+    });
     head += "</tr>";
-    var body = state.rows.slice(-state.n).reverse().map(function (r) {
+    var body = rowsOf().slice(-state.n).reverse().map(function (r) {
       var tr = "<tr><td>" + r.date + "</td>";
-      SESSIONS.forEach(function (s) {
+      if (M.ohlc) {
+        var f = r.full;
+        tr += "<td>" + (f ? fmt(f.open, 2) : "—") + "</td><td>" + (f ? fmt(f.high, 2) : "—") +
+          "</td><td>" + (f ? fmt(f.low, 2) : "—") + "</td><td>" + (f ? fmt(f.close, 2) : "—") + "</td>";
+      }
+      M.sessions.forEach(function (s) {
         var v = r[s.key];
-        tr += "<td>" + (v ? fmt(v.amp, 0) : "—") + "</td><td>" + (v ? fmt(v.pct, 2) : "—") + "</td>";
+        tr += "<td>" + (v ? fmt(v.amp, 0) : "—") + "</td><td>" + (v ? fmt(v.pct, 2) : "—") + "</td>" +
+          (M.mult ? "<td>" + (v ? money(v.amp * M.mult) : "—") + "</td>" : "");
       });
       return tr + "</tr>";
     }).join("");
-    document.getElementById("tbl").innerHTML = head + body;
+    $("tbl").innerHTML = head + body;
   }
 
-  function render() { renderControls(); renderCards(); renderExtremes(); renderChart(); renderTable(); }
+  function render() {
+    var M = cur(), d = state.data[state.market];
+    renderTabs();
+    renderControls();
+    $("note").innerHTML = M.note;
+    if (!d) {
+      $("err").style.display = "block";
+      $("err").textContent = "資料載入失敗，請確認 " + M.file + " 是否存在（需先在 Actions 手動執行一次更新）。";
+      $("updated").textContent = "";
+      ["cards", "ext", "tbl", "extTitle"].forEach(function (id) { $(id).innerHTML = ""; });
+      if (state.chart) { state.chart.destroy(); state.chart = null; }
+      return;
+    }
+    $("err").style.display = "none";
+    $("updated").textContent = "資料更新：" + d.updated;
+    renderCards(); renderExtremes(); renderChart(); renderTable();
+  }
 
-  fetch("data.json?_=" + Date.now())
-    .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-    .then(function (d) {
-      state.rows = d.rows;
-      document.getElementById("updated").textContent = "資料更新：" + d.updated;
-      render();
-    })
-    .catch(function () {
-      document.getElementById("err").style.display = "block";
-      document.getElementById("updated").textContent = "";
+  function normalizeMnq(d) {
+    // MNQ 每日資料是單一全日盤，轉成與台指期相同的 {date, full:{...}} 格式
+    d.rows = d.rows.map(function (r) {
+      return { date: r.date, full: { open: r.open, high: r.high, low: r.low, close: r.close, amp: r.amp, pct: r.pct } };
     });
+    return d;
+  }
+
+  function load(key) {
+    return fetch(MARKETS[key].file + "?_=" + Date.now())
+      .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(function (d) { state.data[key] = key === "mnq" ? normalizeMnq(d) : d; })
+      .catch(function () { state.data[key] = null; });
+  }
+
+  window.addEventListener("hashchange", function () { state.market = marketFromHash(); render(); });
+  state.market = marketFromHash();
+  Promise.all([load("tx"), load("mnq")]).then(render);
 })();
 </script>
 </body>
