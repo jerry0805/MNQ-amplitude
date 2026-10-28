@@ -1,0 +1,35 @@
+name: update-mnq
+
+on:
+  schedule:
+    - cron: "30 22 * * 1-5"   # UTC 22:30（CME 日盤收盤後）= 台灣時間隔日 06:30
+  workflow_dispatch:          # 可在 Actions 頁面手動執行
+
+permissions:
+  contents: write
+
+concurrency:
+  group: data-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - run: python fetch_mnq.py
+
+      - name: Commit updated data
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/mnq.json
+          git diff --cached --quiet || (git commit -m "chore: update MNQ amplitude data" && git pull --rebase && git push)
