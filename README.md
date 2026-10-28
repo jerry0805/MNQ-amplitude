@@ -8,6 +8,13 @@
 - `docs/index.html`：靜態頁面，讀取 `data.json` 畫圖
 - `.github/workflows/update.yml`：每週一到週五台灣時間 15:30 自動執行並提交新資料
 
+## MNQ 頁面
+
+網頁上方的「MNQ」分頁（網址後加 `#mnq` 可直接開啟）顯示 MNQ（微型那斯達克100期貨）的全日盤振幅，資料由 `fetch_mnq.py` 從 Yahoo Finance 的 `MNQ=F` 日線取得，輸出 `docs/mnq.json`。
+台指期與 MNQ 共用同一個頁面 `docs/index.html`；`docs/mnq.html` 只是把舊連結導向主頁。
+排程在 `.github/workflows/update-mnq.yml`，每週一到五 UTC 22:30（台灣時間隔日 06:30，CME 日盤收盤後）執行。
+每口金額 = 振幅 × US$2。Yahoo 的日線與 TradingView 或券商 K 棒可能有些微差異，建議挑一天核對最高、最低價。
+
 ## 部署（GitHub Pages，免費）
 
 1. 在 GitHub 建立新 repo，把這個資料夾的內容全部上傳。
