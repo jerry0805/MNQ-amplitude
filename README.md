@@ -15,6 +15,15 @@
 排程在 `.github/workflows/update-mnq.yml`，每週一到五 UTC 22:30（台灣時間隔日 06:30，CME 日盤收盤後）執行。
 每口金額 = 振幅 × US$2。Yahoo 的日線與 TradingView 或券商 K 棒可能有些微差異，建議挑一天核對最高、最低價。
 
+## WTI 原油分頁
+
+網頁上方的「WTI 原油」分頁（網址後加 `#wti` 可直接開啟）顯示 WTI 原油期貨的全日盤振幅，單位是美元／桶。
+資料由 `fetch_futures.py wti` 從 Yahoo Finance 的 `CL=F` 日線取得，輸出 `docs/wti.json`，排程在 `.github/workflows/update-wti.yml`（每週一到五台灣時間隔日 06:40）。
+每口金額：CL 每 1 美元 US$1,000，MCL（微型）每 1 美元 US$100。
+
+MNQ 與 WTI 共用 `fetch_futures.py`；`fetch_mnq.py` 只是轉接檔，讓舊的 MNQ 排程繼續可用。
+之後要加其他商品，在 `fetch_futures.py` 的 `MARKETS` 加一行、`docs/index.html` 的 `MARKETS` 加一段設定、再複製一份 workflow 即可。
+
 ## 部署（GitHub Pages，免費）
 
 1. 在 GitHub 建立新 repo，把這個資料夾的內容全部上傳。
