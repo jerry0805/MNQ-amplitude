@@ -228,9 +228,7 @@
       var pct = mean(rows.map(function (r) { return r[s.key].pct; }));
       html += '<div class="card"><div class="name"><span class="dot" style="background:var(' + s.color + ')"></span>' +
         s.label + ' · 近 ' + rows.length + ' 日平均</div>' +
-        '<div class="pts">' + fa(pts) + '<small>' + M.unit + '</small></div>' +
-        '<div class="pct">' + fmt(pct, 2) + '%' +
-        (M.lots.length && pts != null ? ' · 每口 ' + lotsText(pts) : '') + '</div></div>';
+        '<div class="pts">' + fa(pts) + '<small>' + M.unit + '</small></div></div>';
     });
     if (M.flat) {
       var key = M.sessions[0].key, all = rowsOf(), latest = all[all.length - 1];
@@ -239,7 +237,7 @@
         var ratio = avg ? latest[key].amp / avg : null;
         html += '<div class="card"><div class="name">最新一日 ' + latest.date + '</div>' +
           '<div class="pts">' + fa(latest[key].amp) + '<small>' + M.unit + '</small></div>' +
-          '<div class="pct">' + fmt(latest[key].pct, 2) + '% · 為平均的 ' + fmt(ratio, 2) + ' 倍</div></div>';
+          '<div class="pct">為平均的 ' + fmt(ratio, 2) + ' 倍</div></div>';
       }
     }
     $("cards").innerHTML = html;
@@ -271,7 +269,7 @@
         var a = sorted[s.key];
         var v = a.length >= 4 ? a[p.at(a.length)] : null;
         tr += "<td>" + (v
-          ? fa(v.amp) + " " + M.unit + " · " + fmt(v.pct, 2) + "%" + (M.lots.length ? " · " + lotsText(v.amp) : "") +
+          ? fa(v.amp) + " " + M.unit +
             '<br><span class="sub">' + v.date + "</span>"
           : "—") + "</td>";
       });
