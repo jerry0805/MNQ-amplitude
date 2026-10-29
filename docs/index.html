@@ -51,7 +51,7 @@
 <body>
 <div class="wrap">
   <header>
-    <h1>振幅監控</h1>
+    <h1 id="title">振幅監控</h1>
     <div class="tabs" id="tabs"></div>
     <span class="sub" id="updated">載入中…</span>
     <div class="controls" id="ctl"></div>
@@ -340,6 +340,9 @@
     renderTabs();
     renderControls();
     $("note").innerHTML = M.note;
+    var ttl = M.price ? "均價監控" : "振幅監控";
+    $("title").textContent = ttl;
+    document.title = ttl;
     if (!d) {
       $("err").style.display = "block";
       $("err").textContent = "資料載入失敗，請確認 " + M.file + " 是否存在（需先在 Actions 手動執行一次更新）。";
