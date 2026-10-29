@@ -17,8 +17,8 @@ import pandas as pd
 import requests
 
 URL = "https://www.taifex.com.tw/cht/3/futDataDown"
-KEEP = 80             # JSON 保留最近幾個交易日
-LOOKBACK_DAYS = 150   # 往前抓幾個日曆天
+KEEP = 130            # JSON 保留最近幾個交易日（60 日均振幅長條要往前多 59 天才算得出來，所以要 > 120）
+LOOKBACK_DAYS = 220   # 往前抓幾個日曆天（130 個交易日約 185 天，留一些餘裕）
 MIN_ROWS = 20         # 少於這個數量視為抓取異常，不覆蓋舊資料
 OUT = Path(__file__).parent / "docs" / "data.json"
 TW = dt.timezone(dt.timedelta(hours=8))

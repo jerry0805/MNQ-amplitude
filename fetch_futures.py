@@ -34,7 +34,7 @@ AVG_FUNCS = {
     "hlc3":  lambda o, h, l, c: (h + l + c) / 3,
     "mid":   lambda o, h, l, c: (h + l) / 2,
 }
-KEEP = 80        # JSON 保留最近幾個交易日
+KEEP = 130       # JSON 保留最近幾個交易日（60 日均振幅長條要往前多 59 天才算得出來，所以要 > 120）
 MIN_ROWS = 20    # 少於這個數量視為抓取異常，不覆蓋舊資料
 DOCS = Path(__file__).parent / "docs"
 TW = ZoneInfo("Asia/Taipei")
@@ -103,7 +103,7 @@ def hourly_from_chart(res: dict) -> list:
 
 
 def fetch_hourly(symbol: str, errors: list):
-    res = fetch_chart_result(symbol, errors, "1h", "6mo")
+    res = fetch_chart_result(symbol, errors, "1h", "1y")
     if res:
         bars = hourly_from_chart(res)
         if bars:
@@ -111,7 +111,7 @@ def fetch_hourly(symbol: str, errors: list):
         errors.append("chart API：沒有任何有效小時線")
     try:
         import yfinance as yf
-        df = yf.Ticker(symbol).history(period="6mo", interval="1h", auto_adjust=False)
+        df = yf.Ticker(symbol).history(period="1y", interval="1h", auto_adjust=False)
         out = []
         for idx, row in df.iterrows():
             vals = [row["Open"], row["High"], row["Low"], row["Close"]]
