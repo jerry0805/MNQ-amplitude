@@ -8,7 +8,7 @@
 全部失敗時會列出每次嘗試的錯誤原因。
 日線涵蓋 CME Globex 一個完整交易日（前一日 17:00 CT ~ 當日 16:00 CT），視為全日盤。
 振幅 = 最高 - 最低；百分比 = 振幅 / 開盤價。
-日均價：設了 "vwap": True 的商品（wti）改抓 1 小時線，每根用 (高+低+收)/3 乘成交量，
+日均價：設了 "vwap": True 的商品（mnq、wti）改抓 1 小時線，每根用 (高+低+收)/3 乘成交量，
   依 CME 交易日（前一日 17:00 CT ~ 當日 16:00 CT）加總成交金額 ÷ 成交量 = 當日 VWAP；
   某天完全沒成交量、或小時線抓不到時，退回 AVG_METHOD 的日線算法並在 avg_src 標記 "ohlc4"。
   N 日均價 = 最近 N 個交易日 VWAP 的平均（不是收盤價平均），另存 vol / pv 供量加權用。
@@ -24,7 +24,7 @@ from zoneinfo import ZoneInfo
 import requests
 
 MARKETS = {
-    "mnq": {"symbol": "MNQ=F", "out": "mnq.json"},   # 每點 US$2
+    "mnq": {"symbol": "MNQ=F", "out": "mnq.json", "vwap": True},   # 每點 US$2
     "wti": {"symbol": "CL=F",  "out": "wti.json", "vwap": True},   # CL 每 1 美元 US$1,000；MCL 每 1 美元 US$100
 }
 URL_TMPL = "https://{host}.finance.yahoo.com/v8/finance/chart/{symbol}"
@@ -236,7 +236,12 @@ def get_rows(symbol: str, vwap: bool, now_ct: dt.datetime) -> list:
                 return rows
             errors.append(f"小時線只湊出 {len(rows)} 個完整交易日")
         print(f"{symbol}：小時線不可用，改用日線 OHLC4。原因：" + "；".join(errors), file=sys.stderr)
-    rows = build_rows(get_bars(symbol), now_ct)
+    bars = get_bars(symbol)
+    if now_ct.time() >= dt.time(17, 0) and bars:
+        # 17:00 CT 之後新的一盤已開始，Yahoo 日線最後一根可能是這根未完成的新盤，寧可少一天也不採用
+        bars = sorted(bars)[:-1]
+        print("日線備援：現在已過 17:00 CT，略過最後一根可能未完成的日線", file=sys.stderr)
+    rows = build_rows(bars, now_ct)
     for r in rows:
         r["avg_src"] = "ohlc4"
     return rows
