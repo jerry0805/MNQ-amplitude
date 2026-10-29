@@ -166,8 +166,8 @@
 
   function renderPriceCards() {
     var html = "", m2 = monthStats(2), m1 = monthStats(1), cw = windowStats(state.n);
-    if (m2) html += priceCard("上上個月（" + m2.month + " 月）均價 · " + m2.n + " 個交易日", m2);
-    if (m1) html += priceCard("上個月（" + m1.month + " 月）均價 · " + m1.n + " 個交易日", m1);
+    if (m2) html += priceCard(m2.month + " 月均價 · " + m2.n + " 個交易日", m2);
+    if (m1) html += priceCard(m1.month + " 月均價 · " + m1.n + " 個交易日", m1);
     if (cw) html += priceCard("近 " + cw.n + " 日均價", cw);
     var all = rowsOf(), last = all[all.length - 1];
     if (last) {
