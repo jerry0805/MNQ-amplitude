@@ -8,13 +8,13 @@
   :root {
     --bg: #f6f7f9; --card: #ffffff; --text: #1b1f24; --muted: #6a737d;
     --line: #e3e6ea; --day: #2563eb; --night: #d97706; --full: #059669;
-    --main: #7c3aed; --avg: #6a737d;
+    --main: #7c3aed; --oil: #0e7490; --avg: #6a737d;
   }
   @media (prefers-color-scheme: dark) {
     :root {
       --bg: #12151a; --card: #1b2027; --text: #e8ebef; --muted: #8b95a1;
       --line: #2b323b; --day: #6ea0ff; --night: #f2a63b; --full: #3ccf9a;
-      --main: #a78bfa; --avg: #8b95a1;
+      --main: #a78bfa; --oil: #22d3ee; --avg: #8b95a1;
     }
   }
   * { box-sizing: border-box; }
@@ -24,7 +24,7 @@
   header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; margin-bottom: 16px; }
   h1 { font-size: 22px; margin: 0; }
   .sub { color: var(--muted); font-size: 13px; }
-  .tabs, .controls { display: flex; gap: 6px; }
+  .tabs, .controls { display: flex; gap: 6px; flex-wrap: wrap; }
   .controls { margin-left: auto; }
   .tabs button, .controls button { border: 1px solid var(--line); background: var(--card); color: var(--text);
     padding: 5px 12px; border-radius: 6px; cursor: pointer; font-size: 13px; }
@@ -79,9 +79,11 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script>
 (function () {
+  // flat = 每天只有單一全日盤（資料檔為 {date, open, high, low, close, amp, pct}）
+  // dec = 振幅顯示的小數位數；unit = 振幅單位；lots = 每口金額換算（名稱、每單位振幅的美元）
   var MARKETS = {
     tx: {
-      label: "台指期 TX", file: "data.json", mult: null, ohlc: false,
+      label: "台指期 TX", file: "data.json", flat: false, dec: 0, unit: "點", lots: [], ohlc: false,
       sessions: [
         { key: "day",   label: "日盤",   color: "--day" },
         { key: "night", label: "夜盤",   color: "--night" },
@@ -92,15 +94,25 @@
             "平均值取各時段最近 N 筆有資料的交易日。資料來源：臺灣期貨交易所，每個交易日 15:30 後自動更新。"
     },
     mnq: {
-      label: "MNQ", file: "mnq.json", mult: 2, ohlc: true,
+      label: "MNQ", file: "mnq.json", flat: true, dec: 0, unit: "點", ohlc: true,
+      lots: [ { n: "MNQ", m: 2 } ],
       sessions: [ { key: "full", label: "全日盤", color: "--main" } ],
       note: "微型那斯達克100期貨（MNQ）近月連續合約，全日盤＝CME 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
             "振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 開盤價；每口金額 = 振幅 × US$2（MNQ 每點 2 美元，未含手續費）。<br>" +
             "資料來源：Yahoo Finance，每個交易日收盤後（台灣時間早上）自動更新；與 TradingView 或券商的 K 棒可能有些微差異。"
+    },
+    wti: {
+      label: "WTI 原油", file: "wti.json", flat: true, dec: 2, unit: "美元", ohlc: true,
+      lots: [ { n: "CL", m: 1000 }, { n: "MCL", m: 100 } ],
+      sessions: [ { key: "full", label: "全日盤", color: "--oil" } ],
+      note: "WTI 原油期貨（CL）近月連續合約，全日盤＝CME Globex 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
+            "振幅 = 最高價 − 最低價（美元／桶）；百分比 = 振幅 ÷ 開盤價；每口金額：CL 每 1 美元 US$1,000，MCL（微型）每 1 美元 US$100，未含手續費。<br>" +
+            "資料來源：Yahoo Finance（CL=F），每個交易日收盤後（台灣時間早上）自動更新；換月當天連續合約的價格可能與券商的 K 棒有差異，請以你的看盤軟體核對。"
     }
   };
+  var ORDER = ["tx", "mnq", "wti"];
   var OPTIONS = [5, 10, 20, 60];
-  var state = { market: "tx", n: 20, data: { tx: null, mnq: null }, chart: null };
+  var state = { market: "tx", n: 20, data: {}, chart: null };
 
   function $(id) { return document.getElementById(id); }
   function css(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
@@ -108,15 +120,23 @@
   function money(x) { return x == null ? "—" : "$" + Math.round(x).toLocaleString("en-US"); }
   function mean(a) { return a.length ? a.reduce(function (s, v) { return s + v; }, 0) / a.length : null; }
   function cur() { return MARKETS[state.market]; }
+  function fa(x) { return fmt(x, cur().dec); }
+  function lotsText(amp) {
+    if (amp == null) return "";
+    return cur().lots.map(function (l) { return l.n + " " + money(amp * l.m); }).join(" · ");
+  }
   function rowsOf() { var d = state.data[state.market]; return d ? d.rows : []; }
   function lastValid(key) { return rowsOf().filter(function (r) { return r[key]; }).slice(-state.n); }
 
-  function marketFromHash() { return location.hash === "#mnq" ? "mnq" : "tx"; }
+  function marketFromHash() {
+    var h = (location.hash || "").replace("#", "");
+    return MARKETS[h] ? h : "tx";
+  }
 
   function renderTabs() {
     var box = $("tabs");
     box.innerHTML = "";
-    Object.keys(MARKETS).forEach(function (k) {
+    ORDER.forEach(function (k) {
       var b = document.createElement("button");
       b.textContent = MARKETS[k].label;
       if (k === state.market) b.className = "on";
@@ -145,17 +165,17 @@
       var pct = mean(rows.map(function (r) { return r[s.key].pct; }));
       html += '<div class="card"><div class="name"><span class="dot" style="background:var(' + s.color + ')"></span>' +
         s.label + ' · 近 ' + rows.length + ' 日平均</div>' +
-        '<div class="pts">' + fmt(pts, 0) + '<small>點</small></div>' +
+        '<div class="pts">' + fa(pts) + '<small>' + M.unit + '</small></div>' +
         '<div class="pct">' + fmt(pct, 2) + '%' +
-        (M.mult ? ' · 每口約 ' + money(pts == null ? null : pts * M.mult) : '') + '</div></div>';
+        (M.lots.length && pts != null ? ' · 每口 ' + lotsText(pts) : '') + '</div></div>';
     });
-    if (M.mult && M.sessions.length === 1) {
+    if (M.flat) {
       var key = M.sessions[0].key, all = rowsOf(), latest = all[all.length - 1];
       var avg = mean(lastValid(key).map(function (r) { return r[key].amp; }));
       if (latest && latest[key]) {
         var ratio = avg ? latest[key].amp / avg : null;
         html += '<div class="card"><div class="name">最新一日 ' + latest.date + '</div>' +
-          '<div class="pts">' + fmt(latest[key].amp, 0) + '<small>點</small></div>' +
+          '<div class="pts">' + fa(latest[key].amp) + '<small>' + M.unit + '</small></div>' +
           '<div class="pct">' + fmt(latest[key].pct, 2) + '% · 為平均的 ' + fmt(ratio, 2) + ' 倍</div></div>';
       }
     }
@@ -164,7 +184,7 @@
 
   function renderExtremes() {
     var M = cur();
-    $("extTitle").textContent = "近 " + state.n + " 日振幅極值（依點數排序）";
+    $("extTitle").textContent = "近 " + state.n + " 日振幅極值（依" + (M.unit === "點" ? "點數" : "金額") + "排序）";
     var head = "<tr><th></th>";
     M.sessions.forEach(function (s) { head += "<th>" + s.label + "</th>"; });
     head += "</tr>";
@@ -188,7 +208,7 @@
         var a = sorted[s.key];
         var v = a.length >= 4 ? a[p.at(a.length)] : null;
         tr += "<td>" + (v
-          ? fmt(v.amp, 0) + " 點 · " + fmt(v.pct, 2) + "%" + (M.mult ? " · " + money(v.amp * M.mult) : "") +
+          ? fa(v.amp) + " " + M.unit + " · " + fmt(v.pct, 2) + "%" + (M.lots.length ? " · " + lotsText(v.amp) : "") +
             '<br><span class="sub">' + v.date + "</span>"
           : "—") + "</td>";
       });
@@ -226,7 +246,7 @@
         plugins: { legend: { labels: { color: txt } } },
         scales: {
           x: { ticks: { color: txt, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
-          y: { beginAtZero: true, title: { display: true, text: "振幅（點）", color: txt },
+          y: { beginAtZero: true, title: { display: true, text: "振幅（" + M.unit + "）", color: txt },
                ticks: { color: txt }, grid: { color: grid } }
         }
       }
@@ -238,7 +258,8 @@
     var head = "<tr><th>交易日</th>";
     if (M.ohlc) head += "<th>開盤</th><th>最高</th><th>最低</th><th>收盤</th>";
     M.sessions.forEach(function (s) {
-      head += "<th>" + s.label + " 點數</th><th>%</th>" + (M.mult ? "<th>每口</th>" : "");
+      head += "<th>" + s.label + (M.sessions.length > 1 ? " 點數" : " 振幅（" + M.unit + "）") + "</th><th>%</th>";
+      M.lots.forEach(function (l) { head += "<th>" + l.n + " 每口</th>"; });
     });
     head += "</tr>";
     var body = rowsOf().slice(-state.n).reverse().map(function (r) {
@@ -250,8 +271,8 @@
       }
       M.sessions.forEach(function (s) {
         var v = r[s.key];
-        tr += "<td>" + (v ? fmt(v.amp, 0) : "—") + "</td><td>" + (v ? fmt(v.pct, 2) : "—") + "</td>" +
-          (M.mult ? "<td>" + (v ? money(v.amp * M.mult) : "—") + "</td>" : "");
+        tr += "<td>" + (v ? fa(v.amp) : "—") + "</td><td>" + (v ? fmt(v.pct, 2) : "—") + "</td>";
+        M.lots.forEach(function (l) { tr += "<td>" + (v ? money(v.amp * l.m) : "—") + "</td>"; });
       });
       return tr + "</tr>";
     }).join("");
@@ -276,8 +297,8 @@
     renderCards(); renderExtremes(); renderChart(); renderTable();
   }
 
-  function normalizeMnq(d) {
-    // MNQ 每日資料是單一全日盤，轉成與台指期相同的 {date, full:{...}} 格式
+  function normalizeFlat(d) {
+    // 單一全日盤的資料轉成與台指期相同的 {date, full:{...}} 格式
     d.rows = d.rows.map(function (r) {
       return { date: r.date, full: { open: r.open, high: r.high, low: r.low, close: r.close, amp: r.amp, pct: r.pct } };
     });
@@ -287,13 +308,13 @@
   function load(key) {
     return fetch(MARKETS[key].file + "?_=" + Date.now())
       .then(function (r) { if (!r.ok) throw new Error(r.status); return r.json(); })
-      .then(function (d) { state.data[key] = key === "mnq" ? normalizeMnq(d) : d; })
+      .then(function (d) { state.data[key] = MARKETS[key].flat ? normalizeFlat(d) : d; })
       .catch(function () { state.data[key] = null; });
   }
 
   window.addEventListener("hashchange", function () { state.market = marketFromHash(); render(); });
   state.market = marketFromHash();
-  Promise.all([load("tx"), load("mnq")]).then(render);
+  Promise.all(ORDER.map(load)).then(render);
 })();
 </script>
 </body>
