@@ -102,11 +102,11 @@
             "資料來源：Yahoo Finance，每個交易日收盤後（台灣時間早上）自動更新；與 TradingView 或券商的 K 棒可能有些微差異。"
     },
     wti: {
-      label: "WTI 原油", file: "wti.json", flat: true, dec: 2, unit: "美元", ohlc: true,
-      lots: [ { n: "CL", m: 1000 }, { n: "MCL", m: 100 } ],
+      label: "WTI 原油", file: "wti.json", flat: true, dec: 2, unit: "美元", ohlc: true, price: true,
+      lots: [],
       sessions: [ { key: "full", label: "全日盤", color: "--oil" } ],
       note: "WTI 原油期貨（CL）近月連續合約，全日盤＝CME Globex 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
-            "振幅 = 最高價 − 最低價（美元／桶）；百分比 = 振幅 ÷ 開盤價；每口金額：CL 每 1 美元 US$1,000，MCL（微型）每 1 美元 US$100，未含手續費。<br>" +
+            "日均價 = 當日成交量加權均價（VWAP，由 1 小時線近似，每根取 (高＋低＋收)÷3 加權）；N 日均價 = 最近 N 個交易日日均價的平均，並另列整段期間的量加權均價。最高價／最低價 = 這 N 日內出現過的最高與最低價（美元／桶）。表中標 * 的日子沒有成交量資料，改以 (開＋高＋低＋收)÷4 估算。<br>" +
             "資料來源：Yahoo Finance（CL=F），每個交易日收盤後（台灣時間早上）自動更新；換月當天連續合約的價格可能與券商的 K 棒有差異，請以你的看盤軟體核對。"
     }
   };
@@ -127,6 +127,51 @@
   }
   function rowsOf() { var d = state.data[state.market]; return d ? d.rows : []; }
   function lastValid(key) { return rowsOf().filter(function (r) { return r[key]; }).slice(-state.n); }
+
+  function windowStats(n) {
+    var rs = rowsOf().slice(-n);
+    if (!rs.length) return null;
+    var hi = rs[0], lo = rs[0];
+    rs.forEach(function (r) {
+      if (r.full.high > hi.full.high) hi = r;
+      if (r.full.low < lo.full.low) lo = r;
+    });
+    var vol = 0, pv = 0, est = 0;
+    rs.forEach(function (r) { if (r.full.vol > 0) { vol += r.full.vol; pv += r.full.pv; } else est++; });
+    return { n: rs.length, avg: mean(rs.map(function (r) { return r.full.avg; })),
+             wavg: vol > 0 ? pv / vol : null, est: est,
+             hi: hi.full.high, hiDate: hi.date, lo: lo.full.low, loDate: lo.date };
+  }
+
+  function renderPriceCards() {
+    var html = "";
+    OPTIONS.forEach(function (n) {
+      var s = windowStats(n);
+      if (!s) return;
+      html += '<div class="card"><div class="name">近 ' + s.n + ' 日均價</div>' +
+        '<div class="pts">' + fa(s.avg) + '<small>美元</small></div>' +
+        '<div class="pct">' + (s.wavg != null ? '量加權 ' + fa(s.wavg) + '<br>' : '') + (s.est ? '含 ' + s.est + ' 日估算<br>' : '') + '最高 ' + fa(s.hi) + '（' + s.hiDate.slice(5) + '）<br>最低 ' + fa(s.lo) + '（' + s.loDate.slice(5) + '）</div></div>';
+    });
+    var all = rowsOf(), last = all[all.length - 1];
+    if (last) {
+      html += '<div class="card"><div class="name">最新一日 ' + last.date + '</div>' +
+        '<div class="pts">' + fa(last.full.avg) + '<small>日均價</small></div>' +
+        '<div class="pct">高 ' + fa(last.full.high) + ' · 低 ' + fa(last.full.low) + ' · 收 ' + fa(last.full.close) + '</div></div>';
+    }
+    $("cards").innerHTML = html;
+  }
+
+  function priceSets(rows) {
+    function ds(label, color, fn, dash) {
+      return { label: label, data: rows.map(fn), borderColor: css(color), backgroundColor: css(color),
+               borderWidth: 2, pointRadius: rows.length > 30 ? 0 : 3, tension: 0.15, borderDash: dash || [] };
+    }
+    return [
+      ds("最高價", "--day",   function (r) { return r.full.high; }, [4, 3]),
+      ds("日均價", "--oil",   function (r) { return r.full.avg; }),
+      ds("最低價", "--night", function (r) { return r.full.low; },  [4, 3])
+    ];
+  }
 
   function marketFromHash() {
     var h = (location.hash || "").replace("#", "");
@@ -158,6 +203,7 @@
   }
 
   function renderCards() {
+    if (cur().price) { renderPriceCards(); return; }
     var M = cur(), html = "";
     M.sessions.forEach(function (s) {
       var rows = lastValid(s.key);
@@ -220,7 +266,7 @@
   function renderChart() {
     var M = cur(), rows = rowsOf().slice(-state.n);
     var labels = rows.map(function (r) { return r.date.slice(5).replace("-", "/"); });
-    var datasets = M.sessions.map(function (s) {
+    var datasets = M.price ? priceSets(rows) : M.sessions.map(function (s) {
       return {
         label: s.label,
         data: rows.map(function (r) { return r[s.key] ? r[s.key].amp : null; }),
@@ -228,7 +274,7 @@
         borderWidth: 2, pointRadius: rows.length > 30 ? 0 : 3, tension: 0.15, spanGaps: false
       };
     });
-    if (M.sessions.length === 1) {
+    if (!M.price && M.sessions.length === 1) {
       var avg = mean(lastValid(M.sessions[0].key).map(function (r) { return r[M.sessions[0].key].amp; }));
       datasets.push({
         label: "平均", data: rows.map(function () { return avg; }),
@@ -246,7 +292,7 @@
         plugins: { legend: { labels: { color: txt } } },
         scales: {
           x: { ticks: { color: txt, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
-          y: { beginAtZero: true, title: { display: true, text: "振幅（" + M.unit + "）", color: txt },
+          y: { beginAtZero: !M.price, title: { display: true, text: M.price ? "價格（美元／桶）" : "振幅（" + M.unit + "）", color: txt },
                ticks: { color: txt }, grid: { color: grid } }
         }
       }
@@ -255,6 +301,16 @@
 
   function renderTable() {
     var M = cur();
+    if (M.price) {
+      var h = "<tr><th>交易日</th><th>開盤</th><th>最高</th><th>最低</th><th>收盤</th><th>日均價</th><th>成交量</th></tr>";
+      var b = rowsOf().slice(-state.n).reverse().map(function (r) {
+        var f = r.full;
+        return "<tr><td>" + r.date + "</td><td>" + fa(f.open) + "</td><td>" + fa(f.high) + "</td><td>" + fa(f.low) +
+               "</td><td>" + fa(f.close) + "</td><td>" + fa(f.avg) + (f.src === "ohlc4" ? "*" : "") + "</td><td>" + (f.vol ? f.vol.toLocaleString("en-US") : "—") + "</td></tr>";
+      }).join("");
+      $("tbl").innerHTML = h + b;
+      return;
+    }
     var head = "<tr><th>交易日</th>";
     if (M.ohlc) head += "<th>開盤</th><th>最高</th><th>最低</th><th>收盤</th>";
     M.sessions.forEach(function (s) {
@@ -292,6 +348,7 @@
       if (state.chart) { state.chart.destroy(); state.chart = null; }
       return;
     }
+    $("ext").parentNode.style.display = M.price ? "none" : "";
     $("err").style.display = "none";
     $("updated").textContent = "資料更新：" + d.updated;
     renderCards(); renderExtremes(); renderChart(); renderTable();
@@ -300,7 +357,9 @@
   function normalizeFlat(d) {
     // 單一全日盤的資料轉成與台指期相同的 {date, full:{...}} 格式
     d.rows = d.rows.map(function (r) {
-      return { date: r.date, full: { open: r.open, high: r.high, low: r.low, close: r.close, amp: r.amp, pct: r.pct } };
+      return { date: r.date, full: { open: r.open, high: r.high, low: r.low, close: r.close, amp: r.amp, pct: r.pct,
+                avg: r.avg != null ? r.avg : (r.open + r.high + r.low + r.close) / 4,
+                vol: r.vol || 0, pv: r.pv || 0, src: r.avg_src || "ohlc4" } };
     });
     return d;
   }
