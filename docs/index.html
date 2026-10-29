@@ -94,15 +94,16 @@
       ],
       note: "台指期(TX)近月合約。日盤 08:45–13:45；夜盤為前一晚 15:00 至當日 05:00；全日盤為同一交易日的夜盤加日盤。<br>" +
             "振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 該時段開盤價（全日盤以夜盤開盤價計）。<br>" +
-            "圖表上方的 K 棒依所選時段的開高低收繪製（紅 K 收盤高於開盤、綠 K 反之；全日盤為夜盤開盤到日盤收盤），下方折線為該時段每日振幅，虛線為期間平均振幅。<br>" +
+            "圖表上方的 K 棒依所選時段的開高低收繪製（紅 K 收盤高於開盤、綠 K 反之；全日盤為夜盤開盤到日盤收盤），下方折線為該時段每日振幅，虛線為期間平均振幅，紅色半透明長條為滾動 N 日均振幅（每天取截至當天最近 N 個有資料的交易日平均，不足 N 日不畫）。<br>" +
             "平均值取各時段最近 N 筆有資料的交易日。資料來源：臺灣期貨交易所，每個交易日 15:30 後自動更新。"
     },
     mnq: {
-      label: "MNQ", file: "mnq.json", flat: true, dec: 0, unit: "點", ohlc: true,
+      label: "MNQ", file: "mnq.json", flat: true, dec: 0, unit: "點", ohlc: true, candle: true,
       lots: [ { n: "MNQ", m: 2 } ],
       sessions: [ { key: "full", label: "全日盤", color: "--main" } ],
       note: "微型那斯達克100期貨（MNQ）近月連續合約，全日盤＝CME 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
             "振幅 = 最高價 − 最低價；百分比 = 振幅 ÷ 開盤價；每口金額 = 振幅 × US$2（MNQ 每點 2 美元，未含手續費）。<br>" +
+            "圖表上方的 K 棒依每日開高低收繪製（紅 K 收盤高於開盤、綠 K 反之），下方折線為每日振幅，虛線為期間平均振幅。<br>" +
             "資料來源：Yahoo Finance，每個交易日收盤後（台灣時間早上）自動更新；與 TradingView 或券商的 K 棒可能有些微差異。"
     },
     wti: {
@@ -310,7 +311,7 @@
 
   function renderSessCtl() {
     var box = $("sessCtl"), M = cur();
-    if (!M.candle) { box.style.display = "none"; return; }
+    if (!M.candle || M.sessions.length < 2) { box.style.display = "none"; return; }
     box.style.display = "";
     box.innerHTML = "";
     M.sessions.forEach(function (s) {
@@ -322,22 +323,37 @@
     });
   }
 
+  function rgba(hex, a) {
+    var n = parseInt(hex.replace("#", ""), 16);
+    return "rgba(" + (n >> 16 & 255) + "," + (n >> 8 & 255) + "," + (n & 255) + "," + a + ")";
+  }
+
   function renderCandleChart() {
-    var M = cur(), key = state.sess, rows = rowsOf().slice(-state.n);
-    var S = M.sessions.filter(function (s) { return s.key === key; })[0];
+    var M = cur(), rows = rowsOf().slice(-state.n);
+    var S = M.sessions.filter(function (s) { return s.key === state.sess; })[0] || M.sessions[0];
+    var key = S.key;
     var labels = rows.map(function (r) { return r.date.slice(5).replace("-", "/"); });
     var candles = rows.map(function (r) { return r[key] || null; });
     var amps = candles.map(function (c) { return c ? c.amp : null; });
     var avg = mean(amps.filter(function (v) { return v != null; }));
+    // 滾動 N 日均振幅：每個交易日取「截至當天、最近 N 筆有資料的交易日」的平均，不足 N 筆不畫
+    var roll = [], buf = [];
+    rowsOf().forEach(function (r) {
+      if (r[key]) buf.push(r[key].amp);
+      roll.push(r[key] && buf.length >= state.n ? mean(buf.slice(-state.n)) : null);
+    });
     var txt = css("--muted"), grid = css("--line");
     if (state.chart) state.chart.destroy();
     state.chart = new Chart($("chart"), {
       type: "line",
       data: { labels: labels, datasets: [
-        { label: S.label + "振幅", data: amps, borderColor: css(S.color), backgroundColor: css(S.color),
+        { type: "bar", label: "近 " + state.n + " 日均振幅", data: roll.slice(-rows.length),
+          backgroundColor: rgba(css("--up"), 0.4), borderWidth: 0, order: 3,
+          barPercentage: 0.8, categoryPercentage: 0.9 },
+        { label: S.label + "振幅", order: 1, data: amps, borderColor: css(S.color), backgroundColor: css(S.color),
           borderWidth: 2, pointRadius: rows.length > 30 ? 2 : 3, tension: 0.15, spanGaps: false },
-        { label: "平均 " + fmt(avg, 0) + " 點", data: rows.map(function () { return avg; }),
-          borderColor: css("--avg"), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0 }
+        { label: "平均 " + fa(avg) + " " + M.unit, data: rows.map(function () { return avg; }),
+          borderColor: css("--avg"), borderWidth: 1.5, borderDash: [6, 4], pointRadius: 0, order: 2 }
       ] },
       plugins: [candlePlugin],
       options: {
@@ -349,12 +365,12 @@
           candles: { rows: candles },
           tooltip: { callbacks: { footer: function (items) {
             var c = candles[items[0].dataIndex];
-            return c ? "開 " + fmt(c.open, 0) + "  高 " + fmt(c.high, 0) + "  低 " + fmt(c.low, 0) + "  收 " + fmt(c.close, 0) : "";
+            return c ? "開 " + fmt(c.open, 2) + "  高 " + fmt(c.high, 2) + "  低 " + fmt(c.low, 2) + "  收 " + fmt(c.close, 2) : "";
           } } }
         },
         scales: {
-          x: { ticks: { color: txt, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
-          y: { beginAtZero: true, title: { display: true, text: "振幅（點）", color: txt },
+          x: { offset: true, ticks: { color: txt, maxRotation: 0, autoSkip: true }, grid: { color: grid } },
+          y: { beginAtZero: true, title: { display: true, text: "振幅（" + M.unit + "）", color: txt },
                ticks: { color: txt }, grid: { color: grid } }
         }
       }
