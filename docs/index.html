@@ -348,7 +348,11 @@
       type: "line",
       data: { labels: labels, datasets: [
         { type: "bar", label: "近 " + state.n + " 日均振幅", data: roll.slice(-rows.length),
-          backgroundColor: rgba(css("--up"), 0.4), borderWidth: 0, order: 3,
+          // 長條比期間平均振幅（虛線）大 → 綠；小 → 紅
+          backgroundColor: roll.slice(-rows.length).map(function (v) {
+            return v == null ? "transparent" : rgba(css(v > avg ? "--down" : "--up"), 0.4);
+          }),
+          borderWidth: 0, order: 3,
           barPercentage: 0.8, categoryPercentage: 0.9 },
         { label: S.label + "振幅", order: 1, data: amps, borderColor: css(S.color), backgroundColor: css(S.color),
           borderWidth: 2, pointRadius: rows.length > 30 ? 2 : 3, tension: 0.15, spanGaps: false },
@@ -361,7 +365,13 @@
         layout: { padding: { top: CANDLE_H } },
         interaction: { mode: "index", intersect: false },
         plugins: {
-          legend: { position: "bottom", labels: { color: txt } },
+          legend: { position: "bottom", labels: { color: txt, generateLabels: function (chart) {
+            var gl = Chart.defaults.plugins.legend.labels.generateLabels, items = gl(chart);
+            items.forEach(function (it) {
+              if (it.datasetIndex === 0) { it.text = "近 " + state.n + " 日均振幅（高於平均綠、低於平均紅）"; it.fillStyle = rgba(css("--muted"), 0.4); it.strokeStyle = it.fillStyle; }
+            });
+            return items;
+          } } },
           candles: { rows: candles },
           tooltip: { callbacks: { footer: function (items) {
             var c = candles[items[0].dataIndex];
