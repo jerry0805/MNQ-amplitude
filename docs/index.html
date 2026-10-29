@@ -106,7 +106,7 @@
       lots: [],
       sessions: [ { key: "full", label: "全日盤", color: "--oil" } ],
       note: "WTI 原油期貨（CL）近月連續合約，全日盤＝CME Globex 一個完整交易日（前一日 17:00 CT 至當日 16:00 CT）。<br>" +
-            "日均價 = 當日成交量加權均價（VWAP，由 1 小時線近似，每根取 (高＋低＋收)÷3 加權）；N 日均價 = 最近 N 個交易日日均價的平均，並另列整段期間的量加權均價。最高價／最低價 = 這 N 日內出現過的最高與最低價（美元／桶）。上個月 = 上一個日曆月份的全部交易日（依 CME 交易日歸屬）。表中標 * 的日子沒有成交量資料，改以 (開＋高＋低＋收)÷4 估算。<br>" +
+            "日均價 = 當日成交量加權均價（VWAP，由 1 小時線近似，每根取 (高＋低＋收)÷3 加權）；N 日均價 = 最近 N 個交易日日均價的平均，並另列整段期間的量加權均價。最高價／最低價 = 這 N 日內出現過的最高與最低價（美元／桶）。上個月、上上個月 = 往前推一個、兩個日曆月份的全部交易日（依 CME 交易日歸屬）。表中標 * 的日子沒有成交量資料，改以 (開＋高＋低＋收)÷4 估算。<br>" +
             "資料來源：Yahoo Finance（CL=F），每個交易日收盤後（台灣時間早上）自動更新；換月當天連續合約的價格可能與券商的 K 棒有差異，請以你的看盤軟體核對。"
     }
   };
@@ -144,12 +144,12 @@
 
   function windowStats(n) { return statsOf(rowsOf().slice(-n)); }
 
-  // 上個月 = 資料最新一天所在月份的前一個日曆月，取該月全部交易日
-  function lastMonthStats() {
+  // back=1 上個月、back=2 上上個月：以資料最新一天所在月份往前推的日曆月，取該月全部交易日
+  function monthStats(back) {
     var rows = rowsOf();
     if (!rows.length) return null;
-    var d = rows[rows.length - 1].date, y = +d.slice(0, 4), m = +d.slice(5, 7) - 1;
-    if (m === 0) { m = 12; y--; }
+    var d = rows[rows.length - 1].date, y = +d.slice(0, 4), m = +d.slice(5, 7) - back;
+    while (m <= 0) { m += 12; y--; }
     var key = y + "-" + (m < 10 ? "0" : "") + m;
     var s = statsOf(rows.filter(function (r) { return r.date.slice(0, 7) === key; }));
     if (s) s.month = m;
@@ -165,8 +165,9 @@
   }
 
   function renderPriceCards() {
-    var html = "", lm = lastMonthStats(), cw = windowStats(state.n);
-    if (lm) html += priceCard("上個月（" + lm.month + " 月）均價 · " + lm.n + " 個交易日", lm);
+    var html = "", m2 = monthStats(2), m1 = monthStats(1), cw = windowStats(state.n);
+    if (m2) html += priceCard("上上個月（" + m2.month + " 月）均價 · " + m2.n + " 個交易日", m2);
+    if (m1) html += priceCard("上個月（" + m1.month + " 月）均價 · " + m1.n + " 個交易日", m1);
     if (cw) html += priceCard("近 " + cw.n + " 日均價", cw);
     var all = rowsOf(), last = all[all.length - 1];
     if (last) {
