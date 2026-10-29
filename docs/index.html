@@ -145,7 +145,7 @@
 
   function renderPriceCards() {
     var html = "";
-    OPTIONS.forEach(function (n) {
+    [state.n].forEach(function (n) {  // 只顯示目前選的天數
       var s = windowStats(n);
       if (!s) return;
       html += '<div class="card"><div class="name">近 ' + s.n + ' 日均價</div>' +
