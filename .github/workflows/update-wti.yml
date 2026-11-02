@@ -2,7 +2,7 @@ name: update-wti
 
 on:
   schedule:
-    - cron: "40 22 * * 1-5"   # UTC 22:40（CME 收盤後）= 台灣時間隔日 06:40
+    - cron: "55 22 * * 1-5"   # UTC 22:55（CME 收盤後）= 台灣時間隔日 06:55
   workflow_dispatch:          # 可在 Actions 頁面手動執行
 
 permissions:
