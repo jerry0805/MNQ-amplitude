@@ -2,7 +2,7 @@ name: update-mnq
 
 on:
   schedule:
-    - cron: "30 22 * * 1-5"   # UTC 22:30（CME 日盤收盤後）= 台灣時間隔日 06:30
+    - cron: "50 22 * * 1-5"   # UTC 22:50（CME 日盤收盤後）= 台灣時間隔日 06:50
   workflow_dispatch:          # 可在 Actions 頁面手動執行
 
 permissions:
